@@ -5,11 +5,11 @@
 #include <RBDdimmer.h>
 
 
-#define WIFI_SSID "kun"
-#define WIFI_PASSWORD "guyangan32"
+#define WIFI_SSID "your ssid"
+#define WIFI_PASSWORD "your password"
 
-#define FIREBASE_HOST "iot-app-9ea75-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define FIREBASE_Authorization_key "dlZw8Me6JPLDgrcPi0CsXUidyi27Dgg1rA6ow0Dv"
+#define FIREBASE_HOST "your realtime database url"
+#define FIREBASE_Authorization_key "your authorization key"
 //26(GPIO4)
 //27(GPIO16)
 
