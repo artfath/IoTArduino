@@ -2,63 +2,103 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <FirebaseESP32.h>
-#include <RBDdimmer.h> // https://github.com/RobotDynOfficial/RBDDimmer
 
+/* Wifi SSID and password */
+#define WIFI_SSID "YOUR WIFI SSID"
+#define WIFI_PASSWORD "YOUR WIFI PASSWORD"
 
-#define WIFI_SSID "kun"
-#define WIFI_PASSWORD "guyangan32"
+/* Firebase host and authkey */
+#define FIREBASE_HOST "YOUR FIREBASE HOST"
+#define FIREBASE_Authorization_key "YOUR AUTHKEY"
 
-#define FIREBASE_HOST "iot-app-9ea75-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define FIREBASE_Authorization_key "dlZw8Me6JPLDgrcPi0CsXUidyi27Dgg1rA6ow0Dv"
-
-
-
-#define outputPin  26 //26(GPIO4)
-#define zerocross  27 //27(GPIO16)
+#define pwmPin 4
+#define zeroCross 16
 
 WiFiClientSecure secured_client;
 FirebaseData fbdo;
-
-dimmerLamp dimmer(outputPin, zerocross);
+hw_timer_t * timer = NULL;
 
 int led1pin = 2;
+int dimVal = 0;
+int zcstate = 0;
+int counter = 0;
+int val = 0;
+
+/* External interrupt function */
+void IRAM_ATTR zcDetect() {
+
+  zcstate = 1;  // For 60Hz =>65
+  counter = 0;
+  digitalWrite(pwmPin, LOW);
+}
+
+/* Timer interrupt function */
+void IRAM_ATTR onTimer() {
+  /* at 50Hz, every 1 cycle (0.02 s) is 2 interrupt, 1 interupt 10ms or 10000uS.
+    dimming 1-100, every 1 counter is 100us */
+  counter++;
+  if ((zcstate == 1) && (counter == val)) {
+    digitalWrite(pwmPin, HIGH);
+    counter = 0;
+    zcstate = 0;
+  }
+}
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   Serial.println();
+  /* initialization GPIO */
   pinMode(led1pin, OUTPUT);
+  pinMode(pwmPin, OUTPUT);
+  pinMode(zeroCross, INPUT);
+  /* attach function when external interrupt triggered */
+  attachInterrupt(zeroCross, zcDetect, RISING);
+  /* connect internet with acces point */
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(500);
   }
   Serial.print("\nWiFi connected. IP address: ");
   Serial.println(WiFi.localIP());
+  /* connect to realtime database in firebase */
   Firebase.begin(FIREBASE_HOST, FIREBASE_Authorization_key);
   Firebase.reconnectWiFi(true);
-  dimmer.begin(NORMAL_MODE, ON);
-
+  /* Use 1st timer of 4 (counted from zero)*/
+  /* to  make 1 tick = 1 us, set prescaler 80. 1/(80MHZ/80) = 1us */
+  timer = timerBegin(0, 80, true);
+  /* Attach onTimer function to our timer */
+  timerAttachInterrupt(timer, &onTimer, true);
+  /* 1 tick is 1 us, call on timer every 100us */
+  /* Repeat the alarm (third parameter) */
+  timerAlarmWrite(timer, 100, true);
+  /* Start an alarm */
+  timerAlarmEnable(timer);
 }
 
 void loop() {
-  // retrieve data from firebase
+  // currentTime=millis();
+
+  /* Retrieve data from firebase */
   if (Firebase.getString(fbdo, "/data/switch")) {
     if (fbdo.stringData() == "on") {
       digitalWrite(led1pin, HIGH);
       if (Firebase.getString(fbdo, "/data/brightness")) {
-        int dimVal = fbdo.stringData().toInt();
+        dimVal = fbdo.stringData().toInt();
         if (dimVal <= 100) {
-          //set dimmer value
-          dimmer.setPower(dimVal);
-          Serial.println(dimVal);
+          /* set dimmer value */
+          val = map(dimVal, 0, 100, 100, 1);
         }
       }
     } else {
       digitalWrite(led1pin, LOW);
+      val = 100;
     }
-    Serial.println(fbdo.stringData());
   }
-
+  Serial.println(val);
+  Serial.print("zc:");
+  Serial.println(zcstate);
+  Serial.print("counter:");
+  Serial.println(counter);
 }
